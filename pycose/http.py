@@ -44,6 +44,7 @@ def web_server(handler, addr='0.0.0.0', port=80):
 def web_server_worker(sck, handler):
   sck.setblocking(False)
   sckr = sck.makefile('rb')
+  print("worker starting ...")
   try:
     while True:
       req = sckr.readline().decode('ascii')
@@ -54,6 +55,7 @@ def web_server_worker(sck, handler):
         sck.close()
         break
       http_method, http_request, http_version = m.group(1), m.group(2), m.group(3)
+      print(">>> %s %s %s" % (http_method, http_request, http_version))
       req_headers = {}
       while True:
         line = sckr.readline().decode('ascii')
@@ -95,7 +97,7 @@ def web_server_worker(sck, handler):
       res_headers['Connection'] = 'Keep-Alive' if keep_alive else 'Close'
    
       dat = (
-        "%s %s %s" % (http_version, str(http_status), "OK") + crlf +
+        "%s %s" % (http_version, http_status) + crlf +
         crlf.join("%s: %s" % (k, v) for k, v in res_headers.items()) +
         crlf + crlf
       ).encode('ascii')
@@ -135,9 +137,10 @@ def web_server_worker(sck, handler):
     print(repr(e))
     raise(e)
 
+  print("worker stopping ...")
 
 def handler_default(http_method, http_request, req_headers, req_body):
-  return [404, {}, "Not Found"] if http_method == 'GET' else [405, {}, "Bad Method"]
+  return "404 NOT FOUND", {}, "Not Found"
 
 
 def static_file_handler(base_path):
@@ -149,10 +152,10 @@ def static_file_handler(base_path):
         print(">>> %s %s %s" % (http_method, http_request, filename))
         s = os.stat(filename)
         http_status = 200
-        return 200, {'Content-Length': str(s[6])}, open(filename, "rb")
+        return "200 OK", {'Content-Length': str(s[6])}, open(filename, "rb")
       except OSError:
         pass
-    return [404, {}, "Not found"]
+    return "404 NOT FOUND", {}, "Not found"
   
   return handler_static
 
