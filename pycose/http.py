@@ -47,9 +47,10 @@ def web_server_worker(sck, handler):
   print("worker starting ...")
   try:
     while True:
-      req = sckr.readline().decode('ascii')
+      rreq = sckr.readline()
       yield
-      if req is None: continue
+      if rreq is None: continue
+      req = rreq.decode('ascii')
       m = http_header_re.match(req)
       if not m:
         sck.close()
@@ -168,4 +169,4 @@ def dispatcher(patterns):
         return handler(http_method, http_request, req_headers, req_body)
     return handler_default(http_method, http_request, req_headers, req_body)
       
-  return dispatch_handler
+  return handler_dispatch
