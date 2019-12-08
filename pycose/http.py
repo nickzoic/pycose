@@ -72,17 +72,25 @@ def web_server_worker(sck, handler):
         x = sckr.read(req_content_length - len(req_body))
         if x: req_body += x
         yield
+   
+      try:
+        http_status, res_headers, res_body = handler(
+          http_method,
+          http_request,
+          req_headers,
+          req_body
+        )
 
-      print(">>> %s %s" % (http_method, http_request) )
-    
-      http_status, res_headers, res_body = handler(
-        http_method,
-        http_request,
-        req_headers,
-        req_body
-      )
+      # XXX TODO catch obvious exceptions
+      # XXX TODO debug vs. production mode (hide X-Exception)
+      except Exception as e:
+        http_status = "500 Server Error"
+        res_headers = { 'X-Exception': str(e) }
+        res_body = "An unknown error occurred"
 
-      if type(res_body) == str:
+      if res_body is None:
+        res_headers["Content-Length"] = "0"
+      elif type(res_body) == str:
         res_body = res_body.encode('utf-8')
         res_headers["Content-Length"] = str(len(res_body))
         res_headers["Content-Encoding"] = 'utf-8'
@@ -109,6 +117,7 @@ def web_server_worker(sck, handler):
         try:
           while True:
             dat += res_body.send(None)
+            yield
             x = sckw.write(dat)
             dat = dat[x:]
             yield
@@ -120,15 +129,16 @@ def web_server_worker(sck, handler):
             s = res_body.read(50)
             if not s: break
             dat += s
-          x = sckw.write(dat)
+            yield
+          x = sckw.write(dat[0:50])
           dat = dat[x:]
           yield
-      else:
+      elif res_body is not None:
         dat += res_body
 
       while dat:
         yield
-        x = sckw.write(dat)
+        x = sckw.write(dat[0:50])
         dat = dat[x:]
       if not keep_alive:
         sck.close()
@@ -140,6 +150,7 @@ def web_server_worker(sck, handler):
 
   print("worker stopping ...")
 
+
 def handler_default(http_method, http_request, req_headers, req_body):
   return "404 NOT FOUND", {}, "Not Found"
 
@@ -147,18 +158,56 @@ def handler_default(http_method, http_request, req_headers, req_body):
 def static_file_handler(base_path):
 
   def handler_static(http_method, http_request, req_headers, req_body):
-    if http_method == 'GET':
-      try:
-        filename = base_path + (http_request if http_request != "/" else "/index.html");
-        print(">>> %s %s %s" % (http_method, http_request, filename))
-        s = os.stat(filename)
-        http_status = 200
-        return "200 OK", {'Content-Length': str(s[6])}, open(filename, "rb")
-      except OSError:
-        pass
-    return "404 NOT FOUND", {}, "Not found"
+    if http_method != 'GET':
+      return "405 Method Not Allowed", { 'Allow': 'GET' }, None
+
+    try:
+      filename = base_path + (http_request if http_request != "/" else "/index.html");
+      print(">>> %s %s %s" % (http_method, http_request, filename))
+      s = os.stat(filename)
+      http_status = 200
+      return "200 OK", {'Content-Length': str(s[6])}, open(filename, "rb")
+    except OSError:
+      return "404 NOT FOUND", {}, "Not found"
   
   return handler_static
+
+
+def preload_file_handler(base_path):
+
+  file_preload = {}
+  for x in os.listdir(base_path):
+    with open(base_path + '/' + x, "rb") as fh:
+      file_preload['/' + x] = fh.read()
+
+  def handler_preload(http_method, http_request, req_headers, req_body):
+    if http_method != 'GET':
+      return "405 Method Not Allowed", { 'Allow': 'GET' }, None
+
+    try:
+      if http_request.endswith('/'): http_request = http_request + "index.html"
+      return "200 OK", {}, file_preload[http_request]
+    except KeyError:
+      return "404 NOT FOUND", {}, "Not found"
+  
+  return handler_preload
+
+
+def form_handler(func):
+
+    def handler_form(http_method, http_request, req_headers, req_body):
+         
+        if http_method == 'POST':
+          # XXX TODO DECODE PROPERLY
+          fields = [ [ y.decode('utf-8') for y in x.split(b'=', 1) ] for x in req_body.split(b'&') ]
+          redirect_to = func(fields) or "."
+        else:
+          # XXX TODO should handle GET forms as well.
+          return "405 Method Not Allowed", { 'Allow': 'POST' }, None
+
+        return "303 See Other", { 'Location': redirect_to }, None
+
+    return handler_form
 
 
 def dispatcher(patterns):
