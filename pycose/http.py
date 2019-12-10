@@ -126,11 +126,11 @@ def web_server_worker(sck, handler):
       elif hasattr(res_body, 'read'):
         while True:
           if len(dat) < 500:
-            s = res_body.read(50)
+            s = res_body.read()
             if not s: break
             dat += s
             yield
-          x = sckw.write(dat[0:50])
+          x = sckw.write(dat)
           dat = dat[x:]
           yield
       elif res_body is not None:
@@ -138,7 +138,7 @@ def web_server_worker(sck, handler):
 
       while dat:
         yield
-        x = sckw.write(dat[0:50])
+        x = sckw.write(dat)
         dat = dat[x:]
       if not keep_alive:
         sck.close()
