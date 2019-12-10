@@ -146,7 +146,6 @@ def web_server_worker(sck, handler):
   except Exception as e:
     sck.close()
     print(repr(e))
-    raise(e)
 
   print("worker stopping ...")
 
